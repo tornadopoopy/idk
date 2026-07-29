@@ -1,4 +1,4 @@
-name: Build exe (.exe)
+name: "Zombie Shooter"
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
           
           Set-Content -Path "$appDir/main.js" -Value "const { app, BrowserWindow } = require('electron'); function createWindow() { const win = new BrowserWindow({ width: 1280, height: 720 }); win.loadURL('file://' + __dirname + '/www/index.html'); } app.whenReady().then(createWindow);"
 
-          Set-Content -Path "$appDir/package.json" -Value '{"name": "soe-multiplayer", "version": "1.0.0", "main": "main.js"}'
+          Set-Content -Path "$appDir/package.json" -Value '{"name": "zombie-shooter", "version": "1.0.0", "main": "main.js"}'
         shell: pwsh
 
       - name: Build Web Assets and Copy to Electron
@@ -76,13 +76,14 @@ jobs:
           
           if (-not $json.build) {
               $json | Add-Member -NotePropertyName "build" -NotePropertyValue (@{
-                  appId = "com.soe.multiplayer"
-                  productName = "SoE Multiplayer"
+                  appId = "com.zombieshooter.app"
+                  productName = "Zombie Shooter"
                   directories = @{
                       app = "electron-app"
                   }
                   win = @{
                       icon = "icon.ico"
+                      artifactName = "Zombie-Shooter-Setup-${version}.${ext}"
                   }
                   nsis = @{
                       oneClick = $false
@@ -109,5 +110,5 @@ jobs:
       - name: Upload Windows Executable Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SOE-Windows-Installer-EXE
+          name: Zombie-Shooter-Windows-Installer
           path: release_artifacts/*
