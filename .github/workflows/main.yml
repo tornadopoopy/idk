@@ -29,44 +29,10 @@ jobs:
           npm run build --if-present
         shell: pwsh
 
-      - name: Prepare Electron Directory & Copy Web Assets
-        run: |
-          New-Item -ItemType Directory -Force -Path "electron-app/www"
-
-          # Search for index.html in common web output directories or current directory
-          if (Test-Path "www/index.html") {
-              Copy-Item -Path "www/*" -Destination "electron-app/www/" -Recurse -Force
-          } elseif (Test-Path "dist/index.html") {
-              Copy-Item -Path "dist/*" -Destination "electron-app/www/" -Recurse -Force
-          } elseif (Test-Path "build/index.html") {
-              Copy-Item -Path "build/*" -Destination "electron-app/www/" -Recurse -Force
-          } elseif (Test-Path "index.html") {
-              Copy-Item -Path "*" -Destination "electron-app/www/" -Recurse -Force
-          }
-
-          # Remove default root index.html inside electron-app to prevent path conflicts
-          if (Test-Path "electron-app/index.html") {
-              Remove-Item "electron-app/index.html" -Force
-          }
-        shell: pwsh
-
-      - name: Fix Index.html Relative Paths
-        run: |
-          $htmlPath = "electron-app/www/index.html"
-          if (Test-Path $htmlPath) {
-              $content = Get-Content $htmlPath -Raw
-              # Remove base href tag if present
-              $content = $content -replace '<base href="[^"]*"\s*/?>', ''
-              # Replace absolute src/href paths with relative paths
-              $content = $content -replace 'src="/', 'src="./'
-              $content = $content -replace 'href="/', 'href="./'
-              Set-Content -Path $htmlPath -Value $content
-          }
-        shell: pwsh
-
-      - name: Create Direct Electron Entry Point & Configuration
+      - name: Create Electron App Root & Entry Point
         run: |
           $appDir = "electron-app"
+          New-Item -ItemType Directory -Force -Path $appDir
           
           $mainJs = @"
           const { app, BrowserWindow } = require('electron');
@@ -89,7 +55,7 @@ jobs:
             if (fs.existsSync(indexPath)) {
               win.loadFile(indexPath);
             } else {
-              win.loadURL('data:text/html,<h2>Error: www/index.html still not found! Path searched: ' + indexPath + '</h2>');
+              win.loadURL('data:text/html,<h2>Error: www/index.html not found! Searched: ' + indexPath + '</h2>');
             }
 
             win.webContents.openDevTools();
@@ -100,8 +66,38 @@ jobs:
           "@
 
           Set-Content -Path "$appDir/main.js" -Value $mainJs
-          # Explicitly define files to include www folder in the packaged build
-          Set-Content -Path "$appDir/package.json" -Value '{"name": "zombie-shooter", "version": "1.0.0", "main": "main.js", "files": ["**/*"]}'
+          Set-Content -Path "$appDir/package.json" -Value '{"name": "zombie-shooter", "version": "1.0.0", "main": "main.js"}'
+        shell: pwsh
+
+      - name: Prepare Electron Directory & Copy Web Assets
+        run: |
+          New-Item -ItemType Directory -Force -Path "electron-app/www"
+
+          if (Test-Path "www/index.html") {
+              Copy-Item -Path "www/*" -Destination "electron-app/www/" -Recurse -Force
+          } elseif (Test-Path "dist/index.html") {
+              Copy-Item -Path "dist/*" -Destination "electron-app/www/" -Recurse -Force
+          } elseif (Test-Path "build/index.html") {
+              Copy-Item -Path "build/*" -Destination "electron-app/www/" -Recurse -Force
+          } elseif (Test-Path "index.html") {
+              Copy-Item -Path "*" -Destination "electron-app/www/" -Recurse -Force
+          }
+
+          if (Test-Path "electron-app/index.html") {
+              Remove-Item "electron-app/index.html" -Force
+          }
+        shell: pwsh
+
+      - name: Fix Index.html Relative Paths
+        run: |
+          $htmlPath = "electron-app/www/index.html"
+          if (Test-Path $htmlPath) {
+              $content = Get-Content $htmlPath -Raw
+              $content = $content -replace '<base href="[^"]*"\s*/?>', ''
+              $content = $content -replace 'src="/', 'src="./'
+              $content = $content -replace 'href="/', 'href="./'
+              Set-Content -Path $htmlPath -Value $content
+          }
         shell: pwsh
 
       - name: Configure Electron Builder Properties
@@ -111,14 +107,11 @@ jobs:
           
           if (-not $json.build) {
               $json | Add-Member -NotePropertyName "build" -NotePropertyValue (@{
-                  appId = "com.zombieshooter.app"
+                  appId = "com.tornado.zombieshooter"
                   productName = "Zombie Shooter"
                   directories = @{
                       app = "electron-app"
                   }
-                  files = @(
-                      "electron-app/**/*"
-                  )
                   win = @{
                       artifactName = 'Zombie-Shooter-Setup-${version}.${ext}'
                   }
