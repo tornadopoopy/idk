@@ -22,22 +22,12 @@ jobs:
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli
-          npm install --save-dev electron electron-builder @capacitor-community/electron png-to-ico
+          npm install --save-dev electron electron-builder @capacitor-community/electron
 
       - name: Initialize Capacitor Electron Platform
         run: |
           npx cap add @capacitor-community/electron || true
           npx cap sync @capacitor-community/electron
-
-      - name: Create Direct Electron Entry Point
-        run: |
-          $appDir = "electron-app"
-          New-Item -ItemType Directory -Force -Path $appDir
-          
-          Set-Content -Path "$appDir/main.js" -Value "const { app, BrowserWindow } = require('electron'); const path = require('path'); function createWindow() { const win = new BrowserWindow({ width: 1280, height: 720, webPreferences: { nodeIntegration: false, contextIsolation: true } }); win.loadFile(path.join(__dirname, 'www', 'index.html')); } app.whenReady().then(createWindow);"
-
-          Set-Content -Path "$appDir/package.json" -Value '{"name": "zombie-shooter", "version": "1.0.0", "main": "main.js"}'
-        shell: pwsh
 
       - name: Build Web Assets and Copy to Electron
         run: |
@@ -48,25 +38,59 @@ jobs:
           }
         shell: pwsh
 
-      - name: Generate Valid 256x256 Icon
+      - name: Fix Index.html Relative Paths
         run: |
-          node -e "
-            const fs = require('fs');
-            const pngToIco = require('png-to-ico');
-            const { createCanvas } = require('canvas');
-          " || true
-          
-          node -e "
-            const fs = require('fs');
-            console.log('Preparing icon...');
-          "
+          $htmlPath = "electron-app/www/index.html"
+          if (Test-Path $htmlPath) {
+              $content = Get-Content $htmlPath -Raw
+              # Remove base href tag if present
+              $content = $content -replace '<base href="[^"]*"\s*/?>', ''
+              # Replace absolute src/href paths with relative paths
+              $content = $content -replace 'src="/', 'src="./'
+              $content = $content -replace 'href="/', 'href="./'
+              Set-Content -Path $htmlPath -Value $content
+          }
         shell: pwsh
 
-      - name: Setup Valid High-Res Icon
+      - name: Create Direct Electron Entry Point
         run: |
-          if (Test-Path "resources/icon.ico") {
-              Copy-Item -Path "resources/icon.ico" -Destination "electron-app/icon.ico" -Force
+          $appDir = "electron-app"
+          New-Item -ItemType Directory -Force -Path $appDir
+          
+          $mainJs = @"
+          const { app, BrowserWindow } = require('electron');
+          const path = require('path');
+          const fs = require('fs');
+
+          function createWindow() {
+            const win = new BrowserWindow({
+              width: 1280,
+              height: 720,
+              webPreferences: {
+                nodeIntegration: true,
+                contextIsolation: false,
+                webSecurity: false
+              }
+            });
+
+            // Locate index.html across production and development build roots
+            let indexPath = path.join(__dirname, 'www', 'index.html');
+            if (!fs.existsSync(indexPath)) {
+              indexPath = path.join(__dirname, 'index.html');
+            }
+
+            win.loadFile(indexPath);
+
+            // Opens DevTools to expose missing files or JavaScript errors
+            win.webContents.openDevTools();
           }
+
+          app.whenReady().then(createWindow);
+          app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+          "@
+
+          Set-Content -Path "$appDir/main.js" -Value $mainJs
+          Set-Content -Path "$appDir/package.json" -Value '{"name": "zombie-shooter", "version": "1.0.0", "main": "main.js"}'
         shell: pwsh
 
       - name: Configure Electron Builder Properties
@@ -82,7 +106,6 @@ jobs:
                       app = "electron-app"
                   }
                   win = @{
-                      icon = "icon.ico"
                       artifactName = 'Zombie-Shooter-Setup-${version}.${ext}'
                   }
                   nsis = @{
