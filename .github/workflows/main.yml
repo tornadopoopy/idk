@@ -24,17 +24,27 @@ jobs:
           npm install @capacitor/core @capacitor/cli
           npm install --save-dev electron electron-builder @capacitor-community/electron
 
-      - name: Initialize Capacitor Electron Platform
+      - name: Build Web Application
         run: |
-          npx cap add @capacitor-community/electron || true
-          npx cap sync @capacitor-community/electron
+          npm run build --if-present
+        shell: pwsh
 
-      - name: Build Web Assets and Copy to Electron
+      - name: Prepare Electron Directory & Copy Web Assets
         run: |
-          npx cap copy @capacitor-community/electron
-          if (Test-Path "www") {
-              New-Item -ItemType Directory -Force -Path "electron-app/www"
+          New-Item -ItemType Directory -Force -Path "electron-app/www"
+
+          # Check common output folders (www, dist, build) and copy the right one
+          if (Test-Path "www/index.html") {
               Copy-Item -Path "www/*" -Destination "electron-app/www/" -Recurse -Force
+          } elseif (Test-Path "dist/index.html") {
+              Copy-Item -Path "dist/*" -Destination "electron-app/www/" -Recurse -Force
+          } elseif (Test-Path "build/index.html") {
+              Copy-Item -Path "build/*" -Destination "electron-app/www/" -Recurse -Force
+          }
+
+          # Remove default Capacitor template index.html to prevent loading blank fallback
+          if (Test-Path "electron-app/index.html") {
+              Remove-Item "electron-app/index.html" -Force
           }
         shell: pwsh
 
@@ -55,7 +65,6 @@ jobs:
       - name: Create Direct Electron Entry Point
         run: |
           $appDir = "electron-app"
-          New-Item -ItemType Directory -Force -Path $appDir
           
           $mainJs = @"
           const { app, BrowserWindow } = require('electron');
@@ -73,15 +82,14 @@ jobs:
               }
             });
 
-            // Locate index.html across production and development build roots
-            let indexPath = path.join(__dirname, 'www', 'index.html');
-            if (!fs.existsSync(indexPath)) {
-              indexPath = path.join(__dirname, 'index.html');
+            const indexPath = path.join(__dirname, 'www', 'index.html');
+            
+            if (fs.existsSync(indexPath)) {
+              win.loadFile(indexPath);
+            } else {
+              win.loadURL('data:text/html,<h2>Error: www/index.html not found in package!</h2>');
             }
 
-            win.loadFile(indexPath);
-
-            // Opens DevTools to expose missing files or JavaScript errors
             win.webContents.openDevTools();
           }
 
