@@ -33,16 +33,18 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "electron-app/www"
 
-          # Check common output folders (www, dist, build) and copy the right one
+          # Search for index.html in common web output directories or current directory
           if (Test-Path "www/index.html") {
               Copy-Item -Path "www/*" -Destination "electron-app/www/" -Recurse -Force
           } elseif (Test-Path "dist/index.html") {
               Copy-Item -Path "dist/*" -Destination "electron-app/www/" -Recurse -Force
           } elseif (Test-Path "build/index.html") {
               Copy-Item -Path "build/*" -Destination "electron-app/www/" -Recurse -Force
+          } elseif (Test-Path "index.html") {
+              Copy-Item -Path "*" -Destination "electron-app/www/" -Recurse -Force
           }
 
-          # Remove default Capacitor template index.html to prevent loading blank fallback
+          # Remove default root index.html inside electron-app to prevent path conflicts
           if (Test-Path "electron-app/index.html") {
               Remove-Item "electron-app/index.html" -Force
           }
@@ -62,7 +64,7 @@ jobs:
           }
         shell: pwsh
 
-      - name: Create Direct Electron Entry Point
+      - name: Create Direct Electron Entry Point & Configuration
         run: |
           $appDir = "electron-app"
           
@@ -87,7 +89,7 @@ jobs:
             if (fs.existsSync(indexPath)) {
               win.loadFile(indexPath);
             } else {
-              win.loadURL('data:text/html,<h2>Error: www/index.html not found in package!</h2>');
+              win.loadURL('data:text/html,<h2>Error: www/index.html still not found! Path searched: ' + indexPath + '</h2>');
             }
 
             win.webContents.openDevTools();
@@ -98,7 +100,8 @@ jobs:
           "@
 
           Set-Content -Path "$appDir/main.js" -Value $mainJs
-          Set-Content -Path "$appDir/package.json" -Value '{"name": "zombie-shooter", "version": "1.0.0", "main": "main.js"}'
+          # Explicitly define files to include www folder in the packaged build
+          Set-Content -Path "$appDir/package.json" -Value '{"name": "zombie-shooter", "version": "1.0.0", "main": "main.js", "files": ["**/*"]}'
         shell: pwsh
 
       - name: Configure Electron Builder Properties
@@ -113,6 +116,9 @@ jobs:
                   directories = @{
                       app = "electron-app"
                   }
+                  files = @(
+                      "electron-app/**/*"
+                  )
                   win = @{
                       artifactName = 'Zombie-Shooter-Setup-${version}.${ext}'
                   }
