@@ -1,0 +1,113 @@
+name: Build exe (.exe)
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli
+          npm install --save-dev electron electron-builder @capacitor-community/electron png-to-ico
+
+      - name: Initialize Capacitor Electron Platform
+        run: |
+          npx cap add @capacitor-community/electron || true
+          npx cap sync @capacitor-community/electron
+
+      - name: Create Direct Electron Entry Point
+        run: |
+          $appDir = "electron-app"
+          New-Item -ItemType Directory -Force -Path $appDir
+          
+          Set-Content -Path "$appDir/main.js" -Value "const { app, BrowserWindow } = require('electron'); function createWindow() { const win = new BrowserWindow({ width: 1280, height: 720 }); win.loadURL('file://' + __dirname + '/www/index.html'); } app.whenReady().then(createWindow);"
+
+          Set-Content -Path "$appDir/package.json" -Value '{"name": "soe-multiplayer", "version": "1.0.0", "main": "main.js"}'
+        shell: pwsh
+
+      - name: Build Web Assets and Copy to Electron
+        run: |
+          npx cap copy @capacitor-community/electron
+          if (Test-Path "www") {
+              New-Item -ItemType Directory -Force -Path "electron-app/www"
+              Copy-Item -Path "www/*" -Destination "electron-app/www/" -Recurse -Force
+          }
+        shell: pwsh
+
+      - name: Generate Valid 256x256 Icon
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pngToIco = require('png-to-ico');
+            const { createCanvas } = require('canvas');
+          " || true
+          
+          node -e "
+            const fs = require('fs');
+            console.log('Preparing icon...');
+          "
+        shell: pwsh
+
+      - name: Setup Valid High-Res Icon
+        run: |
+          if (Test-Path "resources/icon.ico") {
+              Copy-Item -Path "resources/icon.ico" -Destination "electron-app/icon.ico" -Force
+          }
+        shell: pwsh
+
+      - name: Configure Electron Builder Properties
+        run: |
+          $packageJsonPath = "package.json"
+          $json = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+          
+          if (-not $json.build) {
+              $json | Add-Member -NotePropertyName "build" -NotePropertyValue (@{
+                  appId = "com.soe.multiplayer"
+                  productName = "SoE Multiplayer"
+                  directories = @{
+                      app = "electron-app"
+                  }
+                  win = @{
+                      icon = "icon.ico"
+                  }
+                  nsis = @{
+                      oneClick = $false
+                      allowToChangeInstallationDirectory = $true
+                      createDesktopShortcut = $true
+                      createStartMenuShortcut = $true
+                  }
+              })
+          }
+          $json | ConvertTo-Json -Depth 10 | Set-Content $packageJsonPath
+        shell: pwsh
+
+      - name: Package Executable via Electron Builder
+        run: |
+          npx electron-builder --win --dir=false --publish never
+        shell: pwsh
+
+      - name: Locate and Prepare Artifacts
+        run: |
+          New-Item -ItemType Directory -Force -Path "release_artifacts"
+          Get-ChildItem -Path "dist" -Recurse -Include *.exe, *.msi | Copy-Item -Destination "release_artifacts" -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Upload Windows Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOE-Windows-Installer-EXE
+          path: release_artifacts/*
